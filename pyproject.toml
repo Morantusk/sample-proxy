@@ -1,6 +1,6 @@
 [project]
 name = "sample-proxy"
-version = "0.1.0"
+version = "0.1.1"
 description = "A bidirectional TCP tunnel proxy and gateway."
 readme = "README.md"
 requires-python = ">=3.12"

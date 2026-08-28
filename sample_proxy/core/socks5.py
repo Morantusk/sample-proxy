@@ -100,3 +100,111 @@ def handle_socks5(client):
     )
 
     return host, port
+
+
+def send_socks5_reply(client, success):
+    status = b"\x00" if success else b"\x01"
+    client.sendall(
+        b"\x05"
+        + status
+        + b"\x00\x01"
+        + b"\x00\x00\x00\x00"
+        + b"\x00\x00"
+    )
+
+
+def connect_through_socks5(sock, target_host, target_port):
+    sock.sendall(
+        b"\x05\x01\x00"
+    )
+
+    response = recv_exact(
+        sock,
+        2,
+    )
+
+    if response != b"\x05\x00":
+        raise ConnectionError(
+            "SOCKS5 server rejected no-auth method"
+        )
+
+    try:
+        address = socket.inet_aton(
+            target_host
+        )
+        request = (
+            b"\x05\x01\x00\x01"
+            + address
+            + target_port.to_bytes(
+                2,
+                "big",
+            )
+        )
+    except OSError:
+        encoded_host = target_host.encode()
+        if len(encoded_host) > 255:
+            raise ValueError(
+                "SOCKS5 domain is too long"
+            )
+
+        request = (
+            b"\x05\x01\x00\x03"
+            + bytes(
+                [len(encoded_host)]
+            )
+            + encoded_host
+            + target_port.to_bytes(
+                2,
+                "big",
+            )
+        )
+
+    sock.sendall(
+        request
+    )
+
+    header = recv_exact(
+        sock,
+        4,
+    )
+
+    if not header:
+        raise ConnectionError(
+            "SOCKS5 server closed during CONNECT"
+        )
+
+    version, status, _, atyp = header
+
+    if version != 5 or status != 0:
+        raise ConnectionError(
+            f"SOCKS5 CONNECT failed with status {status}"
+        )
+
+    if atyp == 1:
+        recv_exact(
+            sock,
+            4,
+        )
+    elif atyp == 3:
+        length = recv_exact(
+            sock,
+            1,
+        )[0]
+        recv_exact(
+            sock,
+            length,
+        )
+    elif atyp == 4:
+        recv_exact(
+            sock,
+            16,
+        )
+    else:
+        raise ConnectionError(
+            "SOCKS5 server returned unsupported address type"
+        )
+
+    recv_exact(
+        sock,
+        2,
+    )
