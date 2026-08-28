@@ -1,0 +1,14 @@
+[project]
+name = "sample-proxy"
+version = "0.1.0"
+description = "A bidirectional TCP tunnel proxy and gateway."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+sample-proxy = "sample_proxy.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
