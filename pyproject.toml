@@ -1,7 +1,7 @@
 [project]
 name = "sample-proxy"
 version = "0.1.1"
-description = "A bidirectional TCP tunnel proxy and gateway."
+description = "A unified SOCKS and TCP tunnel proxy node."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
