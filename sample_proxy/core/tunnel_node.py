@@ -13,6 +13,7 @@ class TunnelNode:
         self,
         socks_listen=None,
         tunnel_listen=None,
+        tunnel_pipe=None,
         connect_socks=None,
         connect_target=None,
         forwards=None,
@@ -20,6 +21,7 @@ class TunnelNode:
     ):
         self.socks_listen = socks_listen
         self.tunnel_listen = tunnel_listen
+        self.tunnel_pipe = tunnel_pipe
         self.connect_socks = connect_socks
         self.connect_target = connect_target
         self.forwards = forwards or []
@@ -46,6 +48,7 @@ class TunnelNode:
                     self.session,
                     self.socks_listen,
                     self.tunnel_listen,
+                    self.tunnel_pipe,
                 ),
                 daemon=True,
             ).start()
@@ -83,6 +86,7 @@ class TunnelNode:
 def run_node(
     socks_listen=None,
     tunnel_listen=None,
+    tunnel_pipe=None,
     connect_socks=None,
     connect_target=None,
     forwards=None,
@@ -91,6 +95,7 @@ def run_node(
     node = TunnelNode(
         socks_listen=socks_listen,
         tunnel_listen=tunnel_listen,
+        tunnel_pipe=tunnel_pipe,
         connect_socks=connect_socks,
         connect_target=connect_target,
         forwards=forwards,

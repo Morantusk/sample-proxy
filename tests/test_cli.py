@@ -10,12 +10,12 @@ class CliTests(unittest.TestCase):
                 "node",
                 "--socks-listen",
                 "0.0.0.0:7123",
-                "--tunnel-listen",
-                "127.0.0.1:7124",
+                "--tunnel-pipe",
+                "pipe:1",
                 "--connect-socks",
                 "115.29.197.159:8092",
                 "--connect-target",
-                "127.0.0.1:7124",
+                "pipe:1",
                 "--forward",
                 "0.0.0.0:13308=rm-bp1.mysql.rds.aliyuncs.com:3306",
                 "--forward",
@@ -27,9 +27,9 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(args.command, "node")
         self.assertEqual(args.socks_listen, ("0.0.0.0", 7123))
-        self.assertEqual(args.tunnel_listen, ("127.0.0.1", 7124))
+        self.assertEqual(args.tunnel_pipe, ("pipe", 1))
         self.assertEqual(args.connect_socks, ("115.29.197.159", 8092))
-        self.assertEqual(args.connect_target, ("127.0.0.1", 7124))
+        self.assertEqual(args.connect_target, ("pipe", 1))
         self.assertEqual(
             args.forward,
             [

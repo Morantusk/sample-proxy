@@ -5,7 +5,12 @@ from sample_proxy.core.socket_utils import close_socket, relay_socket
 from sample_proxy.core.socks5 import handle_socks5, send_socks5_reply
 
 
-def serve_public_socks(session, socks_listen, tunnel_listen=None):
+def serve_public_socks(
+    session,
+    socks_listen,
+    tunnel_listen=None,
+    tunnel_pipe=None,
+):
     if socks_listen is None:
         return
 
@@ -43,6 +48,7 @@ def serve_public_socks(session, socks_listen, tunnel_listen=None):
                     session,
                     client,
                     tunnel_listen,
+                    tunnel_pipe,
                 ),
                 daemon=True,
             ).start()
@@ -52,7 +58,12 @@ def serve_public_socks(session, socks_listen, tunnel_listen=None):
         )
 
 
-def handle_public_socks_client(session, client, tunnel_listen=None):
+def handle_public_socks_client(
+    session,
+    client,
+    tunnel_listen=None,
+    tunnel_pipe=None,
+):
     target = None
 
     try:
@@ -64,6 +75,16 @@ def handle_public_socks_client(session, client, tunnel_listen=None):
             return
 
         host, port = target
+
+        if tunnel_pipe and (host, port) == tunnel_pipe:
+            send_socks5_reply(
+                client,
+                True,
+            )
+            session.tunnel_reader(
+                client
+            )
+            return
 
         if tunnel_listen and (host, port) == tunnel_listen:
             tunnel = socket.socket()

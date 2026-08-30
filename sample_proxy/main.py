@@ -42,6 +42,12 @@ def build_parser():
         help="Internal raw tunnel listener.",
     )
     node.add_argument(
+        "--tunnel-pipe",
+        type=parse_host_port,
+        metavar="NAME:ID",
+        help="Virtual tunnel endpoint accepted through --socks-listen, for example pipe:1.",
+    )
+    node.add_argument(
         "--connect-socks",
         type=parse_host_port,
         metavar="HOST:PORT",
@@ -84,6 +90,7 @@ def main(argv=None):
         run_node(
             socks_listen=args.socks_listen,
             tunnel_listen=args.tunnel_listen,
+            tunnel_pipe=args.tunnel_pipe,
             connect_socks=args.connect_socks,
             connect_target=args.connect_target,
             forwards=args.forward,
