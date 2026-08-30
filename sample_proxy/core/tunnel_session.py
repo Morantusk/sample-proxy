@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 import uuid
 
 from sample_proxy.core.protocol import *
@@ -29,6 +30,9 @@ class TunnelSession:
     def get_tunnel(self):
         with self.active_tunnel_lock:
             return self.active_tunnel
+
+    def has_tunnel(self):
+        return self.get_tunnel() is not None
 
     def set_tunnel(self, tunnel):
         with self.active_tunnel_lock:
@@ -308,7 +312,7 @@ class TunnelSession:
                 client
             )
 
-    def connect_peer(self, connect_socks, connect_target):
+    def connect_peer_once(self, connect_socks, connect_target):
         if connect_socks is None:
             return
 
@@ -327,8 +331,37 @@ class TunnelSession:
             connect_target[1],
         )
 
-        threading.Thread(
-            target=self.tunnel_reader,
-            args=(tunnel,),
-            daemon=True,
-        ).start()
+        self.tunnel_reader(
+            tunnel
+        )
+
+    def connect_peer_loop(self, connect_socks, connect_target, retry_interval=3):
+        if connect_socks is None:
+            return
+
+        while True:
+            try:
+                print(
+                    "connect peer socks",
+                    f"{connect_socks[0]}:{connect_socks[1]}",
+                    "target",
+                    f"{connect_target[0]}:{connect_target[1]}",
+                )
+                self.connect_peer_once(
+                    connect_socks,
+                    connect_target,
+                )
+            except Exception as e:
+                print(
+                    "connect peer failed",
+                    e,
+                )
+
+            print(
+                "reconnect peer after",
+                retry_interval,
+                "seconds",
+            )
+            time.sleep(
+                retry_interval
+            )

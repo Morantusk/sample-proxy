@@ -63,10 +63,15 @@ class TunnelNode:
                 daemon=True,
             ).start()
 
-        self.session.connect_peer(
-            self.connect_socks,
-            self.connect_target,
-        )
+        if self.connect_socks:
+            threading.Thread(
+                target=self.session.connect_peer_loop,
+                args=(
+                    self.connect_socks,
+                    self.connect_target,
+                ),
+                daemon=True,
+            ).start()
 
         print(
             "node started"

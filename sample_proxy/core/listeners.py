@@ -110,6 +110,21 @@ def handle_public_socks_client(
             )
             return
 
+        if not session.has_tunnel():
+            print(
+                "public socks rejected: no active tunnel",
+                host,
+                port,
+            )
+            send_socks5_reply(
+                client,
+                False,
+            )
+            close_socket(
+                client
+            )
+            return
+
         send_socks5_reply(
             client,
             True,
@@ -205,6 +220,16 @@ def serve_forward(session, listen_host, listen_port, target_host, target_port):
             try:
                 client, _ = server.accept()
             except socket.timeout:
+                continue
+
+            if not session.has_tunnel():
+                print(
+                    "forward rejected: no active tunnel",
+                    f"{target_host}:{target_port}",
+                )
+                close_socket(
+                    client
+                )
                 continue
 
             threading.Thread(
