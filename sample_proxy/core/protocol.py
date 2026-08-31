@@ -3,8 +3,14 @@ import struct
 TYPE_OPEN = 1
 TYPE_DATA = 2
 TYPE_CLOSE = 3
+TYPE_AUTH = 4
+TYPE_AUTH_OK = 5
+TYPE_AUTH_FAIL = 6
+TYPE_PING = 7
+TYPE_PONG = 8
 
 HEADER_SIZE = 9
+MAX_PAYLOAD_SIZE = 1024 * 1024
 
 
 def recv_exact(sock, size):
@@ -56,10 +62,18 @@ def recv_packet(sock):
         header
     )
 
+    if length > MAX_PAYLOAD_SIZE:
+        raise ValueError(
+            f"payload too large: {length}"
+        )
+
     payload = recv_exact(
         sock,
         length
     )
+
+    if payload is None:
+        return None
 
     return (
         msg_type,

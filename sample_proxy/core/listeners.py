@@ -38,9 +38,14 @@ def serve_public_socks(
     try:
         while True:
             try:
-                client, _ = server.accept()
+                client, addr = server.accept()
             except socket.timeout:
                 continue
+
+            print(
+                "socks accepted",
+                f"{addr[0]}:{addr[1]}",
+            )
 
             threading.Thread(
                 target=handle_public_socks_client,
@@ -77,6 +82,10 @@ def handle_public_socks_client(
         host, port = target
 
         if tunnel_pipe and (host, port) == tunnel_pipe:
+            print(
+                "pipe tunnel accepted",
+                f"{host}:{port}",
+            )
             send_socks5_reply(
                 client,
                 True,
@@ -87,6 +96,10 @@ def handle_public_socks_client(
             return
 
         if tunnel_listen and (host, port) == tunnel_listen:
+            print(
+                "tcp tunnel accepted",
+                f"{host}:{port}",
+            )
             tunnel = socket.socket()
             tunnel.connect(
                 tunnel_listen
@@ -173,9 +186,14 @@ def serve_tunnel(session, tunnel_listen):
     try:
         while True:
             try:
-                tunnel, _ = server.accept()
+                tunnel, addr = server.accept()
             except socket.timeout:
                 continue
+
+            print(
+                "tunnel accepted",
+                f"{addr[0]}:{addr[1]}",
+            )
 
             threading.Thread(
                 target=session.tunnel_reader,
@@ -218,9 +236,16 @@ def serve_forward(session, listen_host, listen_port, target_host, target_port):
     try:
         while True:
             try:
-                client, _ = server.accept()
+                client, addr = server.accept()
             except socket.timeout:
                 continue
+
+            print(
+                "forward accepted",
+                f"{addr[0]}:{addr[1]}",
+                "->",
+                f"{target_host}:{target_port}",
+            )
 
             if not session.has_tunnel():
                 print(

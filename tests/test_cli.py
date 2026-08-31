@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from sample_proxy import main
 
@@ -22,6 +23,8 @@ class CliTests(unittest.TestCase):
                 "0.0.0.0:16380=r-bp1.redis.rds.aliyuncs.com:6379",
                 "--allow-target",
                 "172.19.120.101:8080",
+                "--token-file",
+                "C:\\secure\\sample-proxy.token",
             ]
         )
 
@@ -38,6 +41,11 @@ class CliTests(unittest.TestCase):
             ],
         )
         self.assertEqual(args.allow_target, [("172.19.120.101", 8080)])
+        self.assertEqual(args.token_file, "C:\\secure\\sample-proxy.token")
+
+    def test_load_token_uses_environment_when_file_is_not_set(self):
+        with patch.dict("os.environ", {"SAMPLE_PROXY_TOKEN": "secret-token"}):
+            self.assertEqual(main.load_token(), "secret-token")
 
 if __name__ == "__main__":
     unittest.main()

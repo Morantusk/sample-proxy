@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from sample_proxy.core.tunnel_node import run_node
 
@@ -13,6 +14,20 @@ def parse_forward(value):
     listen_host, listen_port = parse_host_port(listen)
     target_host, target_port = parse_host_port(target)
     return listen_host, listen_port, target_host, target_port
+
+
+def load_token(token_file=None):
+    if token_file:
+        with open(
+            token_file,
+            "r",
+            encoding="utf-8",
+        ) as file:
+            return file.read().strip()
+
+    return os.environ.get(
+        "SAMPLE_PROXY_TOKEN"
+    )
 
 
 def build_parser():
@@ -75,6 +90,10 @@ def build_parser():
         metavar="HOST:PORT",
         help="Allow peer tunnel OPEN requests to connect to this local target. Repeat for multiple targets.",
     )
+    node.add_argument(
+        "--token-file",
+        help="Read the tunnel authentication token from this file. Falls back to SAMPLE_PROXY_TOKEN.",
+    )
 
     return parser
 
@@ -87,15 +106,19 @@ def main(argv=None):
     args = parse_args(argv)
 
     if args.command == "node":
-        run_node(
-            socks_listen=args.socks_listen,
-            tunnel_listen=args.tunnel_listen,
-            tunnel_pipe=args.tunnel_pipe,
-            connect_socks=args.connect_socks,
-            connect_target=args.connect_target,
-            forwards=args.forward,
-            allow_targets=set(args.allow_target),
-        )
+        try:
+            run_node(
+                socks_listen=args.socks_listen,
+                tunnel_listen=args.tunnel_listen,
+                tunnel_pipe=args.tunnel_pipe,
+                connect_socks=args.connect_socks,
+                connect_target=args.connect_target,
+                forwards=args.forward,
+                allow_targets=set(args.allow_target),
+                token=load_token(args.token_file),
+            )
+        except ValueError as e:
+            raise SystemExit(str(e))
         return
 
 

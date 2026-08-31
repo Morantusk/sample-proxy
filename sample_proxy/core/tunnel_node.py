@@ -18,6 +18,7 @@ class TunnelNode:
         connect_target=None,
         forwards=None,
         allow_targets=None,
+        token=None,
     ):
         self.socks_listen = socks_listen
         self.tunnel_listen = tunnel_listen
@@ -28,9 +29,23 @@ class TunnelNode:
         self.session = TunnelSession(
             allow_targets=allow_targets,
             local_stream_starts_odd=connect_socks is not None,
+            token=token,
         )
 
+    def validate_config(self):
+        if self.connect_socks and not self.connect_target:
+            raise ValueError(
+                "connect_target is required when connect_socks is set"
+            )
+
+        if self.connect_socks and not self.session.token:
+            raise ValueError(
+                "token is required when connect_socks is set; use --token-file or SAMPLE_PROXY_TOKEN"
+            )
+
     def serve(self):
+        self.validate_config()
+
         if self.tunnel_listen:
             threading.Thread(
                 target=serve_tunnel,
@@ -96,6 +111,7 @@ def run_node(
     connect_target=None,
     forwards=None,
     allow_targets=None,
+    token=None,
 ):
     node = TunnelNode(
         socks_listen=socks_listen,
@@ -105,5 +121,6 @@ def run_node(
         connect_target=connect_target,
         forwards=forwards,
         allow_targets=allow_targets,
+        token=token,
     )
     node.serve()
