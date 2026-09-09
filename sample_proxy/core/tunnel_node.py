@@ -43,6 +43,11 @@ class TunnelNode:
                 "token is required when connect_socks is set; use --token-file or SAMPLE_PROXY_TOKEN"
             )
 
+        if self.tunnel_pipe and not self.session.token:
+            raise ValueError(
+                "token is required when tunnel_pipe is set; use --token-file or SAMPLE_PROXY_TOKEN"
+            )
+
     def serve(self):
         self.validate_config()
 

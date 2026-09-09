@@ -1,4 +1,6 @@
 import hmac
+import hashlib
+import os
 import socket
 import threading
 import time
@@ -10,6 +12,7 @@ from sample_proxy.core.socks5 import connect_through_socks5
 
 
 PING_INTERVAL = 30
+AUTH_CHALLENGE_SIZE = 32
 
 
 class TunnelSession:
@@ -84,12 +87,29 @@ class TunnelSession:
                 data,
             )
 
+    def auth_digest(self, challenge):
+        return hmac.new(
+            self.token.encode(),
+            challenge,
+            hashlib.sha256,
+        ).digest()
+
     def authenticate_incoming(self, tunnel):
         if not self.token:
             print(
                 "auth disabled"
             )
             return True
+
+        challenge = os.urandom(
+            AUTH_CHALLENGE_SIZE
+        )
+        self.send_to_tunnel(
+            tunnel,
+            TYPE_AUTH_CHALLENGE,
+            0,
+            challenge,
+        )
 
         packet = recv_packet(
             tunnel
@@ -117,13 +137,15 @@ class TunnelSession:
             return False
 
         ok = hmac.compare_digest(
-            data.decode(errors="ignore"),
-            self.token,
+            data,
+            self.auth_digest(
+                challenge
+            ),
         )
 
         if not ok:
             print(
-                "auth failed: token mismatch"
+                "auth failed: digest mismatch"
             )
             self.send_to_tunnel(
                 tunnel,
@@ -149,11 +171,29 @@ class TunnelSession:
             )
             return
 
+        packet = recv_packet(
+            tunnel
+        )
+
+        if not packet:
+            raise ConnectionError(
+                "peer closed before auth challenge"
+            )
+
+        msg_type, _, challenge = packet
+
+        if msg_type != TYPE_AUTH_CHALLENGE:
+            raise PermissionError(
+                "auth rejected: peer did not send challenge"
+            )
+
         self.send_to_tunnel(
             tunnel,
             TYPE_AUTH,
             0,
-            self.token.encode(),
+            self.auth_digest(
+                challenge
+            ),
         )
 
         packet = recv_packet(
