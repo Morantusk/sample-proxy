@@ -1,82 +1,83 @@
-import socket
-import threading
+import asyncio
 
-from sample_proxy.core.socket_utils import close_socket, relay_socket
-from sample_proxy.core.socks5 import handle_socks5, send_socks5_reply
+from sample_proxy.core.socks5 import (
+    async_handle_socks5,
+    async_send_socks5_reply,
+)
 
 
-def serve_public_socks(
+def writer_name(writer):
+    try:
+        peer = writer.get_extra_info("peername")
+        return f"{peer[0]}:{peer[1]}"
+    except Exception:
+        return "?:?"
+
+
+async def close_writer(writer):
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except Exception:
+        pass
+
+
+async def start_public_socks(
     session,
     socks_listen,
     tunnel_listen=None,
     tunnel_pipe=None,
 ):
     if socks_listen is None:
-        return
+        return None
 
-    server = socket.socket()
-    server.setsockopt(
-        socket.SOL_SOCKET,
-        socket.SO_REUSEADDR,
-        1,
-    )
-    server.bind(
-        socks_listen
-    )
-    server.listen(
-        100
-    )
-    server.settimeout(
-        1
+    async def handle_client(reader, writer):
+        await handle_public_socks_client(
+            session,
+            reader,
+            writer,
+            tunnel_listen,
+            tunnel_pipe,
+        )
+
+    server = await asyncio.start_server(
+        handle_client,
+        socks_listen[0],
+        socks_listen[1],
+        backlog=100,
     )
 
     print(
         "socks listen",
         f"{socks_listen[0]}:{socks_listen[1]}",
     )
-
-    try:
-        while True:
-            try:
-                client, addr = server.accept()
-            except socket.timeout:
-                continue
-
-            print(
-                "socks accepted",
-                f"{addr[0]}:{addr[1]}",
-            )
-
-            threading.Thread(
-                target=handle_public_socks_client,
-                args=(
-                    session,
-                    client,
-                    tunnel_listen,
-                    tunnel_pipe,
-                ),
-                daemon=True,
-            ).start()
-    finally:
-        close_socket(
-            server
-        )
+    return server
 
 
-def handle_public_socks_client(
+async def handle_public_socks_client(
     session,
-    client,
+    reader,
+    writer,
     tunnel_listen=None,
     tunnel_pipe=None,
 ):
     target = None
 
     try:
-        target = handle_socks5(
-            client
+        print(
+            "socks accepted",
+            writer_name(writer),
+        )
+
+        target = await async_handle_socks5(
+            reader,
+            writer,
         )
 
         if not target:
+            await close_writer(
+                writer
+            )
             return
 
         host, port = target
@@ -86,12 +87,13 @@ def handle_public_socks_client(
                 "pipe tunnel accepted",
                 f"{host}:{port}",
             )
-            send_socks5_reply(
-                client,
+            await async_send_socks5_reply(
+                writer,
                 True,
             )
-            session.tunnel_reader(
-                client
+            await session.tunnel_reader(
+                reader,
+                writer,
             )
             return
 
@@ -100,26 +102,19 @@ def handle_public_socks_client(
                 "tcp tunnel accepted",
                 f"{host}:{port}",
             )
-            tunnel = socket.socket()
-            tunnel.connect(
-                tunnel_listen
+            tunnel_reader, tunnel_writer = await asyncio.open_connection(
+                tunnel_listen[0],
+                tunnel_listen[1],
             )
-            send_socks5_reply(
-                client,
+            await async_send_socks5_reply(
+                writer,
                 True,
             )
-
-            threading.Thread(
-                target=relay_socket,
-                args=(
-                    tunnel,
-                    client,
-                ),
-                daemon=True,
-            ).start()
-            relay_socket(
-                client,
-                tunnel,
+            await relay_pair(
+                reader,
+                writer,
+                tunnel_reader,
+                tunnel_writer,
             )
             return
 
@@ -129,21 +124,22 @@ def handle_public_socks_client(
                 host,
                 port,
             )
-            send_socks5_reply(
-                client,
+            await async_send_socks5_reply(
+                writer,
                 False,
             )
-            close_socket(
-                client
+            await close_writer(
+                writer
             )
             return
 
-        send_socks5_reply(
-            client,
+        await async_send_socks5_reply(
+            writer,
             True,
         )
-        session.open_stream(
-            client,
+        await session.open_stream(
+            reader,
+            writer,
             host,
             port,
         )
@@ -153,77 +149,70 @@ def handle_public_socks_client(
             target,
             e,
         )
-        close_socket(
-            client
+        await close_writer(
+            writer
         )
 
 
-def serve_tunnel(session, tunnel_listen):
+async def start_tunnel(session, tunnel_listen):
     if tunnel_listen is None:
-        return
+        return None
 
-    server = socket.socket()
-    server.setsockopt(
-        socket.SOL_SOCKET,
-        socket.SO_REUSEADDR,
-        1,
-    )
-    server.bind(
-        tunnel_listen
-    )
-    server.listen(
-        10
-    )
-    server.settimeout(
-        1
+    async def handle_tunnel(reader, writer):
+        print(
+            "tunnel accepted",
+            writer_name(writer),
+        )
+        await session.tunnel_reader(
+            reader,
+            writer,
+        )
+
+    server = await asyncio.start_server(
+        handle_tunnel,
+        tunnel_listen[0],
+        tunnel_listen[1],
+        backlog=10,
     )
 
     print(
         "tunnel listen",
         f"{tunnel_listen[0]}:{tunnel_listen[1]}",
     )
+    return server
 
-    try:
-        while True:
-            try:
-                tunnel, addr = server.accept()
-            except socket.timeout:
-                continue
 
+async def start_forward(session, listen_host, listen_port, target_host, target_port):
+    async def handle_client(reader, writer):
+        print(
+            "forward accepted",
+            writer_name(writer),
+            "->",
+            f"{target_host}:{target_port}",
+        )
+
+        if not session.has_tunnel():
             print(
-                "tunnel accepted",
-                f"{addr[0]}:{addr[1]}",
+                "forward rejected: no active tunnel",
+                f"{target_host}:{target_port}",
             )
+            await close_writer(
+                writer
+            )
+            return
 
-            threading.Thread(
-                target=session.tunnel_reader,
-                args=(tunnel,),
-                daemon=True,
-            ).start()
-    finally:
-        close_socket(
-            server
+        await session.open_stream(
+            reader,
+            writer,
+            target_host,
+            target_port,
         )
 
-
-def serve_forward(session, listen_host, listen_port, target_host, target_port):
-    server = socket.socket()
-    server.setsockopt(
-        socket.SOL_SOCKET,
-        socket.SO_REUSEADDR,
-        1,
-    )
-    server.bind(
-        (
-            listen_host,
-            listen_port,
-        )
-    )
-    server.listen(
-        100
-    )
-    server.settimeout(
-        1
+    server = await asyncio.start_server(
+        handle_client,
+        listen_host,
+        listen_port,
+        backlog=100,
     )
 
     print(
@@ -232,41 +221,42 @@ def serve_forward(session, listen_host, listen_port, target_host, target_port):
         "->",
         f"{target_host}:{target_port}",
     )
+    return server
 
-    try:
-        while True:
-            try:
-                client, addr = server.accept()
-            except socket.timeout:
-                continue
 
-            print(
-                "forward accepted",
-                f"{addr[0]}:{addr[1]}",
-                "->",
-                f"{target_host}:{target_port}",
+async def relay_pair(reader_a, writer_a, reader_b, writer_b):
+    async def relay(reader, writer):
+        try:
+            while True:
+                data = await reader.read(
+                    4096
+                )
+                if not data:
+                    break
+                writer.write(
+                    data
+                )
+                await writer.drain()
+        finally:
+            await close_writer(
+                writer
             )
 
-            if not session.has_tunnel():
-                print(
-                    "forward rejected: no active tunnel",
-                    f"{target_host}:{target_port}",
-                )
-                close_socket(
-                    client
-                )
-                continue
-
-            threading.Thread(
-                target=session.open_stream,
-                args=(
-                    client,
-                    target_host,
-                    target_port,
-                ),
-                daemon=True,
-            ).start()
-    finally:
-        close_socket(
-            server
-        )
+    task_a = asyncio.create_task(
+        relay(reader_a, writer_b)
+    )
+    task_b = asyncio.create_task(
+        relay(reader_b, writer_a)
+    )
+    await asyncio.wait(
+        {task_a, task_b},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    task_a.cancel()
+    task_b.cancel()
+    await close_writer(
+        writer_a
+    )
+    await close_writer(
+        writer_b
+    )

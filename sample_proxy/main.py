@@ -1,6 +1,7 @@
 import argparse
 import os
 
+from sample_proxy.config import as_list, load_config
 from sample_proxy.core.tunnel_node import run_node
 
 
@@ -30,10 +31,121 @@ def load_token(token_file=None):
     )
 
 
+def choose(name, args, config, default=None):
+    value = getattr(
+        args,
+        name,
+        None,
+    )
+    if value is not None:
+        return value
+
+    return config.get(
+        name,
+        default,
+    )
+
+
+def choose_list(name, args, config):
+    cli_value = getattr(
+        args,
+        name,
+        None,
+    )
+    config_value = as_list(
+        config.get(name)
+    )
+
+    if cli_value:
+        return config_value + cli_value
+
+    return config_value
+
+
+def parse_config_host_port(config, name):
+    value = config.get(
+        name
+    )
+    if value is None or isinstance(value, tuple):
+        return value
+    return parse_host_port(
+        value
+    )
+
+
+def parse_config_forwards(config):
+    values = []
+    for name in (
+        "forward",
+        "forwards",
+        "tcp_forward",
+        "tcp_forwards",
+    ):
+        values.extend(
+            as_list(
+                config.get(name)
+            )
+        )
+
+    return [
+        parse_forward(value)
+        for value in values
+    ]
+
+
+def parse_config_allow_targets(config):
+    values = []
+    for name in (
+        "allow_target",
+        "allow_targets",
+    ):
+        values.extend(
+            as_list(
+                config.get(name)
+            )
+        )
+
+    return [
+        parse_host_port(value)
+        for value in values
+    ]
+
+
+def normalize_config(config):
+    normalized = dict(
+        config
+    )
+
+    for name in (
+        "socks_listen",
+        "tunnel_listen",
+        "tunnel_pipe",
+        "connect_socks",
+        "connect_target",
+        "admin_listen",
+    ):
+        normalized[name] = parse_config_host_port(
+            normalized,
+            name,
+        )
+
+    normalized["forward"] = parse_config_forwards(
+        normalized
+    )
+    normalized["allow_target"] = parse_config_allow_targets(
+        normalized
+    )
+    return normalized
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="sample-proxy",
         description="Run a unified SOCKS and tunnel proxy node.",
+    )
+    parser.add_argument(
+        "--config",
+        help="Read node options from a TOML config file. CLI values override or append file values.",
     )
     subparsers = parser.add_subparsers(
         dest="command",
@@ -43,6 +155,11 @@ def build_parser():
     node = subparsers.add_parser(
         "node",
         help="Run a unified node with public SOCKS, internal tunnel, peer connection, and local forwards.",
+    )
+    node.add_argument(
+        "--config",
+        dest="node_config",
+        help="Read node options from a TOML config file. CLI values override or append file values.",
     )
     node.add_argument(
         "--socks-listen",
@@ -83,6 +200,14 @@ def build_parser():
         help="Expose a local TCP listener and forward it to the peer side through the active tunnel.",
     )
     node.add_argument(
+        "--tcp-forward",
+        dest="forward",
+        action="append",
+        type=parse_forward,
+        metavar="LISTEN_HOST:LISTEN_PORT=TARGET_HOST:TARGET_PORT",
+        help="Alias of --forward. Expose a plain TCP listener for one fixed target through the active tunnel.",
+    )
+    node.add_argument(
         "--allow-target",
         action="append",
         default=[],
@@ -94,6 +219,27 @@ def build_parser():
         "--token-file",
         help="Read the tunnel authentication token from this file. Falls back to SAMPLE_PROXY_TOKEN.",
     )
+    node.add_argument(
+        "--tunnel-pool-size",
+        type=int,
+        help="Number of outbound tunnels to keep when --connect-socks is set.",
+    )
+    node.add_argument(
+        "--ping-interval",
+        type=float,
+        help="Seconds between tunnel ping packets.",
+    )
+    node.add_argument(
+        "--pong-timeout",
+        type=float,
+        help="Seconds without pong before a tunnel is closed.",
+    )
+    node.add_argument(
+        "--admin-listen",
+        type=parse_host_port,
+        metavar="HOST:PORT",
+        help="Local HTTP admin listener for /health and /stats.",
+    )
 
     return parser
 
@@ -104,18 +250,82 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    config = normalize_config(
+        load_config(
+            args.config
+            or getattr(args, "node_config", None)
+        )
+    )
 
     if args.command == "node":
+        token_file = choose(
+            "token_file",
+            args,
+            config,
+        )
         try:
             run_node(
-                socks_listen=args.socks_listen,
-                tunnel_listen=args.tunnel_listen,
-                tunnel_pipe=args.tunnel_pipe,
-                connect_socks=args.connect_socks,
-                connect_target=args.connect_target,
-                forwards=args.forward,
-                allow_targets=set(args.allow_target),
-                token=load_token(args.token_file),
+                socks_listen=choose(
+                    "socks_listen",
+                    args,
+                    config,
+                ),
+                tunnel_listen=choose(
+                    "tunnel_listen",
+                    args,
+                    config,
+                ),
+                tunnel_pipe=choose(
+                    "tunnel_pipe",
+                    args,
+                    config,
+                ),
+                connect_socks=choose(
+                    "connect_socks",
+                    args,
+                    config,
+                ),
+                connect_target=choose(
+                    "connect_target",
+                    args,
+                    config,
+                ),
+                forwards=choose_list(
+                    "forward",
+                    args,
+                    config,
+                ),
+                allow_targets=set(
+                    choose_list(
+                        "allow_target",
+                        args,
+                        config,
+                    )
+                ),
+                token=load_token(token_file),
+                tunnel_pool_size=choose(
+                    "tunnel_pool_size",
+                    args,
+                    config,
+                    1,
+                ),
+                ping_interval=choose(
+                    "ping_interval",
+                    args,
+                    config,
+                    30,
+                ),
+                pong_timeout=choose(
+                    "pong_timeout",
+                    args,
+                    config,
+                    15,
+                ),
+                admin_listen=choose(
+                    "admin_listen",
+                    args,
+                    config,
+                ),
             )
         except ValueError as e:
             raise SystemExit(str(e))

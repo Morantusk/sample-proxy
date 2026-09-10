@@ -1,3 +1,4 @@
+import asyncio
 import struct
 
 TYPE_OPEN = 1
@@ -70,6 +71,66 @@ def recv_packet(sock):
 
     payload = recv_exact(
         sock,
+        length
+    )
+
+    if payload is None:
+        return None
+
+    return (
+        msg_type,
+        stream_id,
+        payload
+    )
+
+
+async def async_recv_exact(reader, size):
+    try:
+        return await reader.readexactly(size)
+    except asyncio.IncompleteReadError:
+        return None
+
+
+async def async_send_packet(
+        writer,
+        msg_type,
+        stream_id,
+        payload=b""
+):
+    header = struct.pack(
+        "!BII",
+        msg_type,
+        stream_id,
+        len(payload)
+    )
+
+    writer.write(
+        header + payload
+    )
+    await writer.drain()
+
+
+async def async_recv_packet(reader):
+    header = await async_recv_exact(
+        reader,
+        HEADER_SIZE
+    )
+
+    if not header:
+        return None
+
+    msg_type, stream_id, length = struct.unpack(
+        "!BII",
+        header
+    )
+
+    if length > MAX_PAYLOAD_SIZE:
+        raise ValueError(
+            f"payload too large: {length}"
+        )
+
+    payload = await async_recv_exact(
+        reader,
         length
     )
 
